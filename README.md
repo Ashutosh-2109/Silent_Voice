@@ -56,7 +56,7 @@ A working Webcam
 
 Clone the repository:
 
-git clone [https://github.com/yourusername/SilentVoice.git](https://github.com/Ashutosh-2109/SilentVoice.git)
+git clone [https://github.com/Ashutosh-2109/SilentVoice.git](https://github.com/Ashutosh-2109/SilentVoice.git)
 cd SilentVoice
 
 
