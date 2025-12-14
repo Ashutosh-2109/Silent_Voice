@@ -165,7 +165,7 @@ def speak_multilang(text, lang="en"):
         except Exception as e:
             print("TTS Error:", e)
             
-    # Run TTS in separate thread to avoid blocking
+    # Run TTS in separate thread to avoid blockKing
     threading.Thread(target=run, daemon=True).start()
 
 # Initialize MediaPipe hands detection
@@ -676,3 +676,4 @@ class StartupWindow:
 
 if __name__ == "__main__":
     StartupWindow()
+
