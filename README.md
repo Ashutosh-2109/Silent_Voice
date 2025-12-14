@@ -108,3 +108,4 @@ Click "▶ Start Live Interpreter" in the launcher window to begin real-time sig
 Asset Paths: The application uses hardcoded file paths for the icon and startup video. You must edit the ICON_PATH and STARTUP_VIDEO_PATH variables inside runmodel.py to point to valid local files on your system before running.
 
 Dependencies: If you encounter issues with audio playback, ensure you have the necessary audio backend libraries for the playsound library installed on your operating system.
+
