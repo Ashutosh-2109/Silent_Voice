@@ -46,9 +46,32 @@ for sentence in brown.sents():
     for w1, w2 in zip(sentence[:-1], sentence[1:]):
         word_transitions[w1.lower()][w2.lower()] += 1
 
-# Load the trained ASL recognition model
-with open("asl(1)_landmarks_model.pkl", "rb") as f:
-    model, le = pickle.load(f)
+# Initialize sign language settings
+SUPPORTED_SIGN_LANGS = {
+    "American Sign Language (ASL)": "asl",
+    "Arabic Sign Language": "arabic",
+    "Australian Sign Language (Auslan)": "australian",
+    "Brazilian Sign Language (Libras)": "brazilian",
+    "British Sign Language (BSL)": "british",
+    "Chinese Sign Language (CSL)": "chinese",
+    "Greek Sign Language (GSL)": "greek",
+    "Indian Sign Language (ISL)": "indian",
+    "Irish Sign Language (ISL)": "irish",
+    "Japanese Sign Language (JSL)": "japanese",
+    "Korean Sign Language (KSL)": "korean",
+    "Marathi Sign Language": "marathi",
+    "Mongolian Sign Language (MSL)": "mongolian",
+    "Polish Sign Language (PJM)": "polish",
+    "Portuguese Sign Language": "portuguese",
+    "Russian Sign Language (RSL)": "russian",
+    "South African Sign Language (SASL)": "south_african",
+    "Spanish Sign Language (LSE)": "spanish",
+    "Swedish Sign Language (SSL)": "swedish",
+    "Tamil Sign Language": "tamil",
+    "Ukrainian Sign Language (USL)": "ukrainian"
+}
+model = None
+le = None
 
 # Initialize translator for multi-language support
 translator = Translator()
@@ -170,7 +193,7 @@ def speak_multilang(text, lang="en"):
 
 # Initialize MediaPipe hands detection
 mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7)
+hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.7)
 mp_draw = mp.solutions.drawing_utils
 
 # Configuration paths
@@ -205,7 +228,7 @@ class LiveWindow:
         else:
             self.win = tk.Toplevel(master)
 
-        self.win.title("SilentVoice - ASL Interpreter (Live)")
+        self.win.title("SilentVoice - Sign Language Interpreter (Live)")
         load_window_icon(self.win, ICON_PATH)
         self.win.geometry("1200x800")
         # use a solid background color (no transparency)
@@ -254,6 +277,17 @@ class LiveWindow:
         # Sidebar (RIGHT side)
         self.sidebar = tk.Frame(self.content_frame, bg=self.base_bg, width=700)
         self.sidebar.pack(side=tk.RIGHT, fill="y", padx=10, pady=10)
+
+        # Sign Language Dropdown
+        self.selected_sign_lang = tk.StringVar(self.win)
+        self.selected_sign_lang.set("American Sign Language (ASL)")
+        
+        lang_label = tk.Label(self.sidebar, text="Sign Language:", font=("Segoe UI", 12, "bold"), fg="#ffffff", bg=self.base_bg, anchor="w")
+        lang_label.pack(pady=(10, 2), fill="x", padx=10)
+        
+        self.lang_combobox = ttk.Combobox(self.sidebar, textvariable=self.selected_sign_lang, values=list(SUPPORTED_SIGN_LANGS.keys()), font=("Segoe UI", 11), state="readonly")
+        self.lang_combobox.pack(pady=(0, 10), fill="x", padx=10)
+        self.lang_combobox.bind("<<ComboboxSelected>>", lambda e: self.load_selected_model())
 
         self.label_pred = tk.Label(self.sidebar, text="Letter: -", font=("Segoe UI", 40, "bold"),
                                    fg="#00ff88", bg=self.base_bg, anchor="w")
@@ -359,16 +393,41 @@ class LiveWindow:
         self.word = ""
         self.letter_hold_count = 0
         self.hold_threshold = 10
+        self.model = None
+        self.le = None
 
         self.win.bind('<space>', self.add_space)
         self.win.bind('<BackSpace>', self.remove_last_char)
         self.win.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+        self.load_selected_model()
 
         self.cap = cv2.VideoCapture(0)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
         self.update_frame()
+
+    def load_selected_model(self):
+        lang_code = SUPPORTED_SIGN_LANGS[self.selected_sign_lang.get()]
+        model_path = os.path.join("models", f"{lang_code}_landmarks_model.pkl")
+        
+        if not os.path.exists("models"):
+            os.makedirs("models")
+            
+        if os.path.exists(model_path):
+            try:
+                with open(model_path, "rb") as f:
+                    self.model, self.le = pickle.load(f)
+                self.label_pred.config(text="Letter: -")
+                print(f"Loaded sign language model from {model_path}")
+            except Exception as e:
+                print(f"Failed to load model from {model_path}: {e}")
+                self.model, self.le = None, None
+                messagebox.showerror("Error", f"Failed to load model file:\n{model_path}\nError: {e}")
+        else:
+            self.model, self.le = None, None
+            print(f"No trained model found for {self.selected_sign_lang.get()} at '{model_path}'")
 
     def make_button(self, parent, text, color, command):
         return tk.Button(parent, text=text, font=("Segoe UI", 14, "bold"),
@@ -473,46 +532,58 @@ class LiveWindow:
             if results.multi_hand_landmarks:
                 for hand_landmarks in results.multi_hand_landmarks:
                     mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-                    lm_list = []
+                
+                left_hand_lm = [0.0] * 63
+                right_hand_lm = [0.0] * 63
+                for idx, hand_landmarks in enumerate(results.multi_hand_landmarks):
+                    handedness = results.multi_handedness[idx].classification[0].label
+                    lm_coords = []
                     for lm in hand_landmarks.landmark:
-                        lm_list.extend([lm.x, lm.y, lm.z])
-
+                        lm_coords.extend([lm.x, lm.y, lm.z])
+                    
+                    if handedness == "Left":
+                        left_hand_lm = lm_coords
+                    elif handedness == "Right":
+                        right_hand_lm = lm_coords
+                
+                combined_lm = left_hand_lm + right_hand_lm
+                letter = ""
+                confidence = 0.0
+                if self.model is not None and self.le is not None:
                     try:
-                        proba = model.predict_proba([lm_list])[0]
+                        proba = self.model.predict_proba([combined_lm])[0]
                         pred_idx = np.argmax(proba)
-                        letter = le.inverse_transform([pred_idx])[0]
+                        letter = self.le.inverse_transform([pred_idx])[0]
                         confidence = proba[pred_idx] * 100
                     except Exception:
-                        letter = ""
-                        confidence = 0.0
-
-                    stable_letter = self.get_stable_prediction(letter) if letter else ""
-                    self.label_pred.config(text=f"Letter: {stable_letter}")
-
-                    if confidence > 80:
-                        color = "#2ecc71"
-                    elif confidence > 50:
-                        color = "#f1c40f"
-                    else:
-                        color = "#e74c3c"
-                    
-                    self.label_acc.config(text=f"Accuracy: {confidence:.2f}%", fg=color)
-                    try:
-                        self.acc_bar['value'] = max(0.0, min(100.0, confidence))
-                    except Exception:
                         pass
+                
+                stable_letter = self.get_stable_prediction(letter) if letter else ""
+                self.label_pred.config(text=f"Letter: {stable_letter}")
 
-                    if stable_letter == self.last_letter:
-                        self.letter_hold_count += 1
-                    else:
-                        self.letter_hold_count = 0
-                        self.last_letter = stable_letter
+                if confidence > 80:
+                    color = "#2ecc71"
+                elif confidence > 50:
+                    color = "#f1c40f"
+                else:
+                    color = "#e74c3c"
+                
+                self.label_acc.config(text=f"Accuracy: {confidence:.2f}%", fg=color)
+                try:
+                    self.acc_bar['value'] = max(0.0, min(100.0, confidence))
+                except Exception:
+                    pass
 
-                    if self.letter_hold_count == self.hold_threshold and stable_letter:
-                        self.word += stable_letter
-                        self.label_word.config(text=f"Word: {self.word}")
-                        # Update word suggestions when word changes
-                        self.update_suggestions()
+                if stable_letter == self.last_letter:
+                    self.letter_hold_count += 1
+                else:
+                    self.letter_hold_count = 0
+                    self.last_letter = stable_letter
+
+                if self.letter_hold_count == self.hold_threshold and stable_letter:
+                    self.word += stable_letter
+                    self.label_word.config(text=f"Word: {self.word}")
+                    self.update_suggestions()
             else:
                 try:
                     self.acc_bar['value'] = 0
