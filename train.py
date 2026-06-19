@@ -234,7 +234,7 @@ class TrainModelGUI:
         self.lang_combobox.grid(row=0, column=1, pady=5, sticky="ew")
         self.lang_combobox.bind("<<ComboboxSelected>>", self.update_reference_image)
         
-        tk.Label(collection_frame, text="Letter (A-Z):", font=("Segoe UI", 11), fg="#ffffff", bg="#1c1c1c").grid(row=1, column=0, sticky="w", pady=5)
+        tk.Label(collection_frame, text="Sign Label:", font=("Segoe UI", 11), fg="#ffffff", bg="#1c1c1c").grid(row=1, column=0, sticky="w", pady=5)
         self.letter_entry = tk.Entry(collection_frame, font=("Segoe UI", 11), width=10)
         self.letter_entry.grid(row=1, column=1, pady=5, sticky="ew")
         
@@ -399,7 +399,7 @@ class TrainModelGUI:
         self.stop_btn.config(state="disabled")
         self.pause_btn.config(state="normal")
         self.resume_btn.config(state="disabled")
-        self.log(f"✅ Collection complete for letter '{self.current_letter}'")
+        self.log(f"✅ Collection complete for label '{self.current_letter}'")
         messagebox.showinfo("Success", f"Collected {self.samples_collected} samples for '{self.current_letter}'")
 
     def start_collection(self):
@@ -408,9 +408,9 @@ class TrainModelGUI:
         Validates input parameters and initializes the collection thread.
         Updates UI to reflect the collecting state.
         """
-        letter = self.letter_entry.get().strip().upper()
-        if not letter or len(letter) != 1 or not letter.isalpha():
-            messagebox.showerror("Error", "Please enter a single letter (A-Z)")
+        letter = self.letter_entry.get().strip()
+        if not letter:
+            messagebox.showerror("Error", "Please enter a sign label (e.g. A, B, Hw)")
             return
         try:
             samples = int(self.samples_entry.get())
@@ -427,7 +427,7 @@ class TrainModelGUI:
         self.stop_btn.config(state="normal")
         self.pause_btn.config(state="normal")
         self.resume_btn.config(state="disabled")
-        self.log(f"🎬 Starting collection for letter '{letter}' ({samples} samples)")
+        self.log(f"🎬 Starting collection for label '{letter}' ({samples} samples)")
         self.log("👋 Show your hand sign to the camera...")
         self.collecting_thread = threading.Thread(target=self.collection_worker, daemon=True)
         self.collecting_thread.start()
