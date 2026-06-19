@@ -197,9 +197,9 @@ hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.7)
 mp_draw = mp.solutions.drawing_utils
 
 # Configuration paths
-ICON_PATH = r"C:\Users\91932\Downloads\ChatGPT Image Sep 10, 2025, 05_04_37 PM.png"
-STARTUP_VIDEO_PATH = r"C:\Users\91932\OneDrive\Documents\SV\WhatsApp Video 2025-11-04 at 13.18.27_91c57fed.mp4"
-BACKGROUND_IMAGE_PATH = ""
+ICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.png")
+STARTUP_VIDEO_PATH = ""
+BACKGROUND_IMAGE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "background.png")
 
 ##########################################HITEN########################################
 ###########################################TANMOY###########################################
@@ -285,9 +285,14 @@ class LiveWindow:
         lang_label = tk.Label(self.sidebar, text="Sign Language:", font=("Segoe UI", 12, "bold"), fg="#ffffff", bg=self.base_bg, anchor="w")
         lang_label.pack(pady=(10, 2), fill="x", padx=10)
         
-        self.lang_combobox = ttk.Combobox(self.sidebar, textvariable=self.selected_sign_lang, values=list(SUPPORTED_SIGN_LANGS.keys()), font=("Segoe UI", 11), state="readonly")
+        self.lang_combobox = tk.OptionMenu(self.sidebar, self.selected_sign_lang, *SUPPORTED_SIGN_LANGS.keys())
+        self.lang_combobox.config(font=("Segoe UI", 11), bg="#1c1c1c", fg="white", activebackground="#2c2c2c", activeforeground="white", highlightthickness=0, relief="flat")
+        try:
+            self.lang_combobox["menu"].config(bg="#1c1c1c", fg="white", font=("Segoe UI", 11))
+        except Exception:
+            pass
         self.lang_combobox.pack(pady=(0, 10), fill="x", padx=10)
-        self.lang_combobox.bind("<<ComboboxSelected>>", lambda e: self.load_selected_model())
+        self.selected_sign_lang.trace_add("write", lambda *args: self.win.after(50, self.load_selected_model))
 
         self.label_pred = tk.Label(self.sidebar, text="Letter: -", font=("Segoe UI", 40, "bold"),
                                    fg="#00ff88", bg=self.base_bg, anchor="w")
@@ -628,7 +633,7 @@ class LiveWindow:
             pass
         self.win.after(50, self.animate_title)
 
-# --------- Startup window (with dynamic video background) ----------
+# --------- Startup window (with dynamic video/image background) ----------
 class StartupWindow:
     def __init__(self):
         self.root = tk.Tk()
@@ -637,9 +642,9 @@ class StartupWindow:
         self.root.geometry("600x400")
         self.root.configure(bg="#121212")
 
-        # background video label (fills window)
-        self.bg_label = tk.Label(self.root, bd=0)
-        self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
+        # Create canvas for background image & overlay UI text
+        self.canvas = tk.Canvas(self.root, highlightthickness=0, bg="#121212")
+        self.canvas.place(x=0, y=0, relwidth=1, relheight=1)
 
         # attempt to open startup video
         self._cap = None
@@ -651,22 +656,42 @@ class StartupWindow:
         except Exception:
             self._cap = None
 
-        # fallback: if no video, keep solid background (previous title will show)
-        # overlay UI (will appear above bg_label)
-        # title = tk.Label(self.root, text="SILENTVOICE", font=("Segoe UI", 32, "bold"),
-        #                  fg="white", bg="#121212")
-        # title.place(relx=0.5, rely=0.18, anchor="center")
+        self.bg_photo = None
+        if not self._cap and BACKGROUND_IMAGE_PATH and os.path.exists(BACKGROUND_IMAGE_PATH):
+            try:
+                img = Image.open(BACKGROUND_IMAGE_PATH).convert("RGB")
+                img = img.resize((600, 400), Image.Resampling.LANCZOS)
+                self.bg_photo = ImageTk.PhotoImage(img)
+                self.canvas.create_image(0, 0, image=self.bg_photo, anchor="nw")
+            except Exception as e:
+                print("Failed to load startup background image:", e)
 
-        # subtitle = tk.Label(self.root, text="The Symphony of Aphonics", font=("Segoe UI", 16),
-        #                     fg="#cccccc", bg="#121212")
-        # subtitle.place(relx=0.5, rely=0.30, anchor="center")
+        # Draw overlay UI text directly on canvas or using transparent-looking labels
+        if self._cap:
+            # If video is running, we will use a label overlay
+            self.bg_label = tk.Label(self.root, bd=0)
+            self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
+            self.bg_label.lower()
+            
+            self.title_label = tk.Label(self.root, text="SILENTVOICE", font=("Segoe UI", 32, "bold"), fg="white", bg="#121212")
+            self.title_label.place(relx=0.5, rely=0.18, anchor="center")
+            
+            self.subtitle_label = tk.Label(self.root, text="The Symphony of Aphonics", font=("Segoe UI", 16), fg="#cccccc", bg="#121212")
+            self.subtitle_label.place(relx=0.5, rely=0.30, anchor="center")
+            
+            self.info_label = tk.Label(self.root, text="Press Start to open the live interpreter window.", fg="#aaaaaa", bg="#121212")
+            self.info_label.place(relx=0.5, rely=0.70, anchor="center")
+        else:
+            # Draw beautiful, glowing text directly on the canvas!
+            self.canvas.create_text(300, 80, text="SILENTVOICE", font=("Segoe UI", 36, "bold"), fill="#ffffff")
+            # Glowing shadow effect for title
+            self.canvas.create_text(301, 81, text="SILENTVOICE", font=("Segoe UI", 36, "bold"), fill="#00ff88")
+            self.canvas.create_text(300, 130, text="The Symphony of Aphonics", font=("Segoe UI", 16, "italic"), fill="#00ff88")
+            self.canvas.create_text(300, 260, text="Press Start to open the live interpreter window.", font=("Segoe UI", 11), fill="#aaaaaa")
 
         start_btn = tk.Button(self.root, text="▶ Start Live Interpreter", font=("Segoe UI", 16, "bold"),
-                              bg="#27ae60", fg="white", padx=20, pady=10, command=self.open_live)
+                               bg="#27ae60", fg="white", padx=20, pady=10, command=self.open_live)
         start_btn.place(relx=0.5, rely=0.80, anchor="center")
-
-        # info = tk.Label(self.root, text="Press Start to open the live interpreter window.", fg="#aaaaaa", bg="#121212")
-        # info.place(relx=0.5, rely=0.70, anchor="center")
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
@@ -675,7 +700,6 @@ class StartupWindow:
             self._video_running = True
             self._update_startup_video()
         else:
-            # show a static background color/image if you want; keep bg_label empty for solid bg
             pass
 
         self.root.mainloop()
