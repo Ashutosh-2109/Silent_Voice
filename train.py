@@ -12,13 +12,59 @@ from tkinter import messagebox, scrolledtext, ttk
 from PIL import Image, ImageTk
 import threading
 
-# Define file paths for data storage and model
-DATA_FILE = "asl_landmarks_data.csv"    # CSV file to store hand landmark data
-MODEL_FILE = "asl(1)_landmarks_model.pkl"  # File to save trained model
+# Supported sign languages and their code abbreviations
+SUPPORTED_SIGN_LANGS = {
+    "American Sign Language (ASL)": "asl",
+    "Arabic Sign Language": "arabic",
+    "Australian Sign Language (Auslan)": "australian",
+    "Brazilian Sign Language (Libras)": "brazilian",
+    "British Sign Language (BSL)": "british",
+    "Chinese Sign Language (CSL)": "chinese",
+    "Greek Sign Language (GSL)": "greek",
+    "Indian Sign Language (ISL)": "indian",
+    "Irish Sign Language (ISL)": "irish",
+    "Japanese Sign Language (JSL)": "japanese",
+    "Korean Sign Language (KSL)": "korean",
+    "Marathi Sign Language": "marathi",
+    "Mongolian Sign Language (MSL)": "mongolian",
+    "Polish Sign Language (PJM)": "polish",
+    "Portuguese Sign Language": "portuguese",
+    "Russian Sign Language (RSL)": "russian",
+    "South African Sign Language (SASL)": "south_african",
+    "Spanish Sign Language (LSE)": "spanish",
+    "Swedish Sign Language (SSL)": "swedish",
+    "Tamil Sign Language": "tamil",
+    "Ukrainian Sign Language (USL)": "ukrainian"
+}
+
+# Image mapping for sign language reference guides (cheat sheets)
+SIGN_LANG_IMAGES = {
+    "asl": "american.jpeg",
+    "arabic": "arabic.jpg",
+    "australian": "australian.jpg",
+    "brazilian": "brazilian.jpg",
+    "british": "british.jpeg",
+    "chinese": "chinese.jpg",
+    "greek": "Greek Sign Language.png",
+    "indian": "indian.jpeg",
+    "irish": "irish.jpg",
+    "japanese": "japanese.jpg",
+    "korean": "korean.png",
+    "marathi": "marathi.webp",
+    "mongolian": "mongonian.gif",
+    "polish": "polish.jpg",
+    "portuguese": "portugese.jpg",
+    "russian": "russian.jpg",
+    "south_african": "south african.jpg",
+    "spanish": "spanish.jpeg",
+    "swedish": "sweden.jpg",
+    "tamil": "tamil.png",
+    "ukrainian": "ukranian.JPG"
+}
 
 # Initialize MediaPipe hands module for hand tracking
 mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7)
+hands = mp_hands.Hands(max_num_hands=2, min_detection_confidence=0.7)
 mp_draw = mp.solutions.drawing_utils
 
 class TrainModelGUI:
@@ -33,7 +79,7 @@ class TrainModelGUI:
             root: The root tkinter window
         """
         self.root = root
-        self.root.title("ASL Model Trainer - SilentVoice")
+        self.root.title("Sign Language Trainer - SilentVoice")
         self.root.geometry("1000x700")
         self.root.configure(bg="#0f0f0f")
         
@@ -45,16 +91,108 @@ class TrainModelGUI:
         self.samples_collected = 0       # Current number of samples
         self.is_paused = False          # Pause state flag
         self.collecting_thread = None    # Thread for data collection
+        self.selected_lang = tk.StringVar(self.root)
+        self.selected_lang.set("American Sign Language (ASL)")
+        self.zoom_scale = 1.0
+        self.original_image = None
         
         # Setup UI components
         self.create_ui()
+
+    def get_paths(self):
+        lang_code = SUPPORTED_SIGN_LANGS[self.selected_lang.get()]
+        data_path = os.path.join("dataset", f"{lang_code}_landmarks_data.csv")
+        model_path = os.path.join("models", f"{lang_code}_landmarks_model.pkl")
+        return data_path, model_path
+
+    def update_reference_image(self, event=None):
+        lang_code = SUPPORTED_SIGN_LANGS[self.selected_lang.get()]
+        img_name = SIGN_LANG_IMAGES.get(lang_code)
+        if not img_name:
+            self.original_image = None
+            self.ref_canvas.delete("all")
+            self.ref_canvas.create_text(230, 110, text="No reference image available", fill="#ffffff", font=("Segoe UI", 11))
+            return
+            
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Check inside Silent_Voice first, then fallback to parent folder
+        img_path = os.path.join(script_dir, "sign languages", img_name)
+        if not os.path.exists(img_path):
+            img_path = os.path.join(os.path.dirname(script_dir), "sign languages", img_name)
+        
+        if os.path.exists(img_path):
+            try:
+                # Load and preserve the original image for scaling
+                img = Image.open(img_path)
+                if img_name.lower().endswith('.gif'):
+                    img.seek(0)
+                
+                # Initial fit sizing
+                max_w, max_h = 460, 220
+                w, h = img.size
+                ratio = min(max_w / w, max_h / h)
+                new_w = int(w * ratio)
+                new_h = int(h * ratio)
+                
+                self.original_image = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                self.zoom_scale = 1.0
+                self.render_zoomed_image()
+                self.log(f"🖼 Loaded reference guide for '{self.selected_lang.get()}' (Scroll to zoom, Drag to pan)")
+            except Exception as e:
+                self.original_image = None
+                self.ref_canvas.delete("all")
+                self.ref_canvas.create_text(230, 110, text=f"Error loading image: {e}", fill="#e74c3c", font=("Segoe UI", 11))
+        else:
+            self.original_image = None
+            self.ref_canvas.delete("all")
+            self.ref_canvas.create_text(230, 110, text=f"Reference image not found:\n{img_name}", fill="#e74c3c", font=("Segoe UI", 11))
+
+    def render_zoomed_image(self):
+        if self.original_image is None:
+            return
+        w, h = self.original_image.size
+        new_w = int(w * self.zoom_scale)
+        new_h = int(h * self.zoom_scale)
+        
+        img = self.original_image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        photo = ImageTk.PhotoImage(img)
+        
+        self.ref_canvas.delete("all")
+        self.ref_canvas.image_obj = photo  # Keep reference
+        
+        canvas_w = self.ref_canvas.winfo_width()
+        canvas_h = self.ref_canvas.winfo_height()
+        if canvas_w <= 1: canvas_w = 460
+        if canvas_h <= 1: canvas_h = 220
+        
+        x = max(canvas_w // 2, new_w // 2)
+        y = max(canvas_h // 2, new_h // 2)
+        
+        self.ref_canvas.create_image(x, y, image=photo, anchor="center")
+        self.ref_canvas.config(scrollregion=(0, 0, max(canvas_w, new_w), max(canvas_h, new_h)))
+
+    def zoom_reference_image(self, event):
+        if self.original_image is None:
+            return
+        if event.delta > 0:
+            self.zoom_scale = min(4.0, self.zoom_scale + 0.1)
+        else:
+            self.zoom_scale = max(0.2, self.zoom_scale - 0.1)
+        self.render_zoomed_image()
+
+    def start_pan(self, event):
+        self.ref_canvas.scan_mark(event.x, event.y)
+        
+    def pan_image(self, event):
+        self.ref_canvas.scan_dragto(event.x, event.y, gain=1)
 
     def create_ui(self):
         """
         Create and setup all UI components including frames, buttons, and labels.
         Organizes the interface into main sections: video feed, controls, and logging.
         """
-        header = tk.Label(self.root, text="ASL Model Trainer", font=("Segoe UI", 24, "bold"),fg="#ffffff", bg="#1c1c1c", pady=10)
+        header = tk.Label(self.root, text="Sign Language Trainer", font=("Segoe UI", 24, "bold"),fg="#ffffff", bg="#1c1c1c", pady=10)
         header.pack(fill=tk.X)
         main_frame = tk.Frame(self.root, bg="#0f0f0f")
         main_frame.pack(fill="both", expand=True, padx=20, pady=20)
@@ -63,25 +201,44 @@ class TrainModelGUI:
         cam_label = tk.Label(left_frame, text="Camera Preview", font=("Segoe UI", 14, "bold"), fg="#00ff88", bg="#1c1c1c")
         cam_label.pack(pady=5)
         self.video_label = tk.Label(left_frame, bg="#0f0f0f")
-        self.video_label.pack(fill="both", expand=True, padx=10, pady=10)
+        self.video_label.pack(fill="both", expand=True, padx=10, pady=(10, 5))
+        
+        # Gesture Reference Guide Frame
+        ref_frame = tk.LabelFrame(left_frame, text="Gesture Reference Guide (Scroll to Zoom, Drag to Pan)", font=("Segoe UI", 12, "bold"), fg="#00ff88", bg="#1c1c1c", padx=5, pady=5)
+        ref_frame.pack(fill="both", expand=True, padx=10, pady=(5, 10))
+        self.ref_canvas = tk.Canvas(ref_frame, bg="#1c1c1c", highlightthickness=0)
+        self.ref_canvas.pack(fill="both", expand=True)
+        
+        # Bind zoom and pan events to canvas
+        self.ref_canvas.bind("<MouseWheel>", self.zoom_reference_image)
+        self.ref_canvas.bind("<ButtonPress-1>", self.start_pan)
+        self.ref_canvas.bind("<B1-Motion>", self.pan_image)
         right_frame = tk.Frame(main_frame, bg="#0f0f0f", width=400)
         right_frame.pack(side=tk.RIGHT, fill="both", padx=(10, 0))
         collection_frame = tk.LabelFrame(right_frame, text="Data Collection", font=("Segoe UI", 12, "bold"), fg="#00ff88", bg="#1c1c1c", padx=15, pady=15)
         collection_frame.pack(fill="x", pady=(0, 15))
-        tk.Label(collection_frame, text="Letter (A-Z):", font=("Segoe UI", 11), fg="#ffffff", bg="#1c1c1c").grid(row=0, column=0, sticky="w", pady=5)
+        
+        tk.Label(collection_frame, text="Sign Language:", font=("Segoe UI", 11), fg="#ffffff", bg="#1c1c1c").grid(row=0, column=0, sticky="w", pady=5)
+        self.lang_combobox = ttk.Combobox(collection_frame, textvariable=self.selected_lang, values=list(SUPPORTED_SIGN_LANGS.keys()), font=("Segoe UI", 11), state="readonly")
+        self.lang_combobox.grid(row=0, column=1, pady=5, sticky="ew")
+        self.lang_combobox.bind("<<ComboboxSelected>>", self.update_reference_image)
+        
+        tk.Label(collection_frame, text="Letter (A-Z):", font=("Segoe UI", 11), fg="#ffffff", bg="#1c1c1c").grid(row=1, column=0, sticky="w", pady=5)
         self.letter_entry = tk.Entry(collection_frame, font=("Segoe UI", 11), width=10)
-        self.letter_entry.grid(row=0, column=1, pady=5, sticky="ew")
-        tk.Label(collection_frame, text="Samples:", font=("Segoe UI", 11), fg="#ffffff", bg="#1c1c1c").grid(row=1, column=0, sticky="w", pady=5)
+        self.letter_entry.grid(row=1, column=1, pady=5, sticky="ew")
+        
+        tk.Label(collection_frame, text="Samples:", font=("Segoe UI", 11), fg="#ffffff", bg="#1c1c1c").grid(row=2, column=0, sticky="w", pady=5)
         self.samples_entry = tk.Entry(collection_frame, font=("Segoe UI", 11), width=10)
         self.samples_entry.insert(0, "50")
-        self.samples_entry.grid(row=1, column=1, pady=5, sticky="ew")
+        self.samples_entry.grid(row=2, column=1, pady=5, sticky="ew")
+        
         collection_frame.columnconfigure(1, weight=1)
         self.progress_label = tk.Label(collection_frame, text="Progress: 0/0", font=("Segoe UI", 10), fg="#f1c40f", bg="#1c1c1c")
-        self.progress_label.grid(row=2, column=0, columnspan=2, pady=10)
+        self.progress_label.grid(row=3, column=0, columnspan=2, pady=10)
         self.progress_bar = ttk.Progressbar(collection_frame, orient="horizontal", mode="determinate", maximum=100, length=300)
-        self.progress_bar.grid(row=3, column=0, columnspan=2, pady=5)
+        self.progress_bar.grid(row=4, column=0, columnspan=2, pady=5)
         btn_frame = tk.Frame(collection_frame, bg="#1c1c1c")
-        btn_frame.grid(row=4, column=0, columnspan=2, pady=15)
+        btn_frame.grid(row=5, column=0, columnspan=2, pady=15)
         self.start_btn = tk.Button(btn_frame, text="▶ Start Collection", font=("Segoe UI", 11,"bold"), bg="#27ae60", fg="white", padx=15, pady=8, command=self.start_collection)
         self.start_btn.pack(side=tk.LEFT, padx=5)
         self.stop_btn = tk.Button(btn_frame, text="■ Stop", font=("Segoe UI", 11, "bold"), bg="#c0392b", fg="white", padx=15, pady=8, command=self.stop_collection, state="disabled")
@@ -100,6 +257,7 @@ class TrainModelGUI:
         log_frame.pack(fill="both", expand=True)
         self.log_text = scrolledtext.ScrolledText(log_frame, font=("Consolas", 9), bg="#0f0f0f", fg="#00ff88", height=10, wrap=tk.WORD)
         self.log_text.pack(fill="both", expand=True)
+        self.update_reference_image()
         self.init_camera()
         self.update_video()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -156,7 +314,8 @@ class TrainModelGUI:
         self.root.after(10, self.update_video)
 
     def append_to_csv(self, data, label):
-        with open(DATA_FILE, "a", newline="") as f:
+        data_path, _ = self.get_paths()
+        with open(data_path, "a", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(data + [label])
 
@@ -200,28 +359,30 @@ class TrainModelGUI:
                     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     results = hands.process(frame_rgb)
                     
-                    # Check for multiple hands
-                    if results.multi_hand_landmarks and len(results.multi_hand_landmarks) > 1:
-                        self.log("⚠️ Multiple hands detected! Training will stop.")
-                        self.training_status.config(text="Status: Stopped - Multiple hands detected", fg="#e74c3c")
-                        messagebox.showwarning("Warning", "Training stopped: Multiple hands detected.\nPlease use only ONE hand for training.")
-                        self.stop_collection()
-                        return
-
-                    # Continue with single hand detection
-                    if results.multi_hand_landmarks and len(results.multi_hand_landmarks) == 1:
-                        for hand_landmarks in results.multi_hand_landmarks:
-                            lm_list = []
+                    # Process detected hands (up to 2) and extract 126 coordinates
+                    if results.multi_hand_landmarks:
+                        left_hand_lm = [0.0] * 63
+                        right_hand_lm = [0.0] * 63
+                        for idx, hand_landmarks in enumerate(results.multi_hand_landmarks):
+                            handedness = results.multi_handedness[idx].classification[0].label
+                            lm_coords = []
                             for lm in hand_landmarks.landmark:
-                                lm_list.extend([lm.x, lm.y, lm.z])
-                            self.append_to_csv(lm_list, self.current_letter)
-                            self.samples_collected += 1
-                            progress = (self.samples_collected / self.samples_to_collect) * 100
-                            self.progress_bar['value'] = progress
-                            self.progress_label.config(text=f"Progress: {self.samples_collected}/{self.samples_to_collect}")
-                            self.log(f"Collected sample {self.samples_collected}/{self.samples_to_collect} for '{self.current_letter}'")
-                            if self.samples_collected >= self.samples_to_collect:
-                                break
+                                lm_coords.extend([lm.x, lm.y, lm.z])
+                            
+                            if handedness == "Left":
+                                left_hand_lm = lm_coords
+                            elif handedness == "Right":
+                                right_hand_lm = lm_coords
+                        
+                        combined_lm = left_hand_lm + right_hand_lm
+                        self.append_to_csv(combined_lm, self.current_letter)
+                        self.samples_collected += 1
+                        progress = (self.samples_collected / self.samples_to_collect) * 100
+                        self.progress_bar['value'] = progress
+                        self.progress_label.config(text=f"Progress: {self.samples_collected}/{self.samples_to_collect}")
+                        self.log(f"Collected sample {self.samples_collected}/{self.samples_to_collect} for '{self.current_letter}'")
+                        if self.samples_collected >= self.samples_to_collect:
+                            break
         self.is_collecting = False
         self.start_btn.config(state="normal")
         self.stop_btn.config(state="disabled")
@@ -284,20 +445,21 @@ class TrainModelGUI:
         def train_worker():
             try:
                 X, y = [], []
-                if not os.path.exists(DATA_FILE):
-                    self.log("❌ No data file found! Collect data first.")
-                    messagebox.showerror("Error", "No data found. Please collect data first.")
+                data_path, model_path = self.get_paths()
+                if not os.path.exists(data_path):
+                    self.log(f"❌ No data file found at '{data_path}'! Collect data first.")
+                    messagebox.showerror("Error", f"No data found for {self.selected_lang.get()}. Please collect data first.")
                     self.train_btn.config(state="normal")
                     self.training_status.config(text="Status: Failed", fg="#e74c3c")
                     return
-                with open(DATA_FILE, "r") as f:
+                with open(data_path, "r") as f:
                     reader = csv.reader(f)
                     for row in reader:
                         if len(row) > 0:
                             X.append([float(val) for val in row[:-1]])
                             y.append(row[-1])
                 if len(X) == 0:
-                    self.log("❌ No data found in CSV file!")
+                    self.log(f"❌ No data found in CSV file '{data_path}'!")
                     messagebox.showerror("Error", "CSV file is empty. Please collect data first.")
                     self.train_btn.config(state="normal")
                     self.training_status.config(text="Status: Failed", fg="#e74c3c")
@@ -313,11 +475,11 @@ class TrainModelGUI:
                 accuracy = model.score(X_test, y_test)
                 self.log(f"✅ Model trained successfully!")
                 self.log(f"📈 Accuracy: {accuracy * 100:.2f}%")
-                with open(MODEL_FILE, "wb") as f:
+                with open(model_path, "wb") as f:
                     pickle.dump((model, le), f)
-                self.log(f"💾 Model saved as '{MODEL_FILE}'")
+                self.log(f"💾 Model saved as '{model_path}'")
                 self.training_status.config(text=f"Status: Trained (Accuracy: {accuracy * 100:.1f}%)", fg="#2ecc71")
-                messagebox.showinfo("Success", f"Model trained successfully!\n\nAccuracy: {accuracy * 100:.2f}%\nSaved as: {MODEL_FILE}")
+                messagebox.showinfo("Success", f"Model trained successfully!\n\nAccuracy: {accuracy * 100:.2f}%\nSaved as: {model_path}")
             except Exception as e:
                 self.log(f"❌ Training failed: {str(e)}")
                 messagebox.showerror("Error", f"Training failed:\n{str(e)}")
