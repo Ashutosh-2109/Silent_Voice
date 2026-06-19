@@ -230,9 +230,14 @@ class TrainModelGUI:
         collection_frame.pack(fill="x", pady=(0, 15))
         
         tk.Label(collection_frame, text="Sign Language:", font=("Segoe UI", 11), fg="#ffffff", bg="#1c1c1c").grid(row=0, column=0, sticky="w", pady=5)
-        self.lang_combobox = ttk.Combobox(collection_frame, textvariable=self.selected_lang, values=list(SUPPORTED_SIGN_LANGS.keys()), font=("Segoe UI", 11), state="readonly")
+        self.lang_combobox = tk.OptionMenu(collection_frame, self.selected_lang, *SUPPORTED_SIGN_LANGS.keys())
+        self.lang_combobox.config(font=("Segoe UI", 11), bg="#1c1c1c", fg="white", activebackground="#2c2c2c", activeforeground="white", highlightthickness=0, relief="flat")
+        try:
+            self.lang_combobox["menu"].config(bg="#1c1c1c", fg="white", font=("Segoe UI", 11))
+        except Exception:
+            pass
         self.lang_combobox.grid(row=0, column=1, pady=5, sticky="ew")
-        self.lang_combobox.bind("<<ComboboxSelected>>", self.update_reference_image)
+        self.selected_lang.trace_add("write", lambda *args: self.root.after(50, self.update_reference_image))
         
         tk.Label(collection_frame, text="Sign Label:", font=("Segoe UI", 11), fg="#ffffff", bg="#1c1c1c").grid(row=1, column=0, sticky="w", pady=5)
         self.letter_entry = tk.Entry(collection_frame, font=("Segoe UI", 11), width=10)
