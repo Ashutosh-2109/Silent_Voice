@@ -656,6 +656,7 @@ class StartupWindow:
         except Exception:
             self._cap = None
 
+<<<<<<< HEAD
         self.bg_photo = None
         if not self._cap and BACKGROUND_IMAGE_PATH and os.path.exists(BACKGROUND_IMAGE_PATH):
             try:
@@ -688,6 +689,21 @@ class StartupWindow:
             self.canvas.create_text(301, 81, text="SILENTVOICE", font=("Segoe UI", 36, "bold"), fill="#00ff88")
             self.canvas.create_text(300, 130, text="The Symphony of Aphonics", font=("Segoe UI", 16, "italic"), fill="#00ff88")
             self.canvas.create_text(300, 260, text="Press Start to open the live interpreter window.", font=("Segoe UI", 11), fill="#aaaaaa")
+=======
+        # fallback: if no video, keep solid background (previous title will show)
+        # overlay UI (will appear above bg_label)
+        if not self._cap:
+            title = tk.Label(self.root, text="SILENTVOICE", font=("Segoe UI", 32, "bold"),
+                             fg="white", bg="#121212")
+            title.place(relx=0.5, rely=0.18, anchor="center")
+
+            subtitle = tk.Label(self.root, text="The Symphony of Aphonics", font=("Segoe UI", 16),
+                                fg="#cccccc", bg="#121212")
+            subtitle.place(relx=0.5, rely=0.30, anchor="center")
+
+            info = tk.Label(self.root, text="Press Start to open the live interpreter window.", fg="#aaaaaa", bg="#121212")
+            info.place(relx=0.5, rely=0.70, anchor="center")
+>>>>>>> ccfd217 (british sign language)
 
         start_btn = tk.Button(self.root, text="▶ Start Live Interpreter", font=("Segoe UI", 16, "bold"),
                                bg="#27ae60", fg="white", padx=20, pady=10, command=self.open_live)
