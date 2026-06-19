@@ -95,9 +95,20 @@ class TrainModelGUI:
         self.selected_lang.set("American Sign Language (ASL)")
         self.zoom_scale = 1.0
         self.original_image = None
+        # Pre-create empty dataset files for all supported languages
+        self.initialize_datasets()
         
         # Setup UI components
         self.create_ui()
+
+    def initialize_datasets(self):
+        if not os.path.exists("dataset"):
+            os.makedirs("dataset")
+        for lang_code in SUPPORTED_SIGN_LANGS.values():
+            data_path = os.path.join("dataset", f"{lang_code}_landmarks_data.csv")
+            if not os.path.exists(data_path):
+                with open(data_path, "w", newline="") as f:
+                    pass
 
     def get_paths(self):
         lang_code = SUPPORTED_SIGN_LANGS[self.selected_lang.get()]
